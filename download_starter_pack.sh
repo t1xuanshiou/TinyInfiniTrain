@@ -79,4 +79,3 @@ run_in_parallel() {
 
 # Run the download commands in parallel in batches of 2
 run_in_parallel 6 "${download_commands[@]}"
-

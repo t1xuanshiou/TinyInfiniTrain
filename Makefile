@@ -8,7 +8,7 @@ CMAKE_OPT += -DUSE_CUDA=$(USE_CUDA)
 
 build:
 	mkdir -p build/$(TYPE)
-	cd build/$(TYPE) && cmake $(CMAKE_OPT) ../.. && make -j8
+	cd build/$(TYPE) && cmake $(CMAKE_OPT) -DCMAKE_BUILD_TYPE=$(TYPE) ../.. && make -j8
 
 clean:
 	rm -rf build

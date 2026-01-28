@@ -34,7 +34,7 @@ std::shared_ptr<Tensor> SoftmaxForward(const std::shared_ptr<Tensor> &input, int
             // compute sum_exp
             float sum_exp = 0.0f;
             for (int j = 0; j < axis; ++j) {
-                output_data[offset + j * inner] = std::exp(input_data[offset + j * inner] - max_val);
+                output_data[offset + j * inner] = expf(input_data[offset + j * inner] - max_val);
                 sum_exp += output_data[offset + j * inner];
             }
 

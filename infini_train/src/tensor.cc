@@ -282,8 +282,18 @@ std::shared_ptr<Tensor> Tensor::Flatten(int64_t start, int64_t end) {
     // TODO：实现张量扁平化操作，将指定维度范围[start, end]内的所有维度合并为一个维度
     // HINT:
     // =================================== 作业 ===================================
-
-    return std::make_shared<Tensor>();
+    std::vector<int64_t> new_shape = dims_;
+    int merged_dim = 1;
+    if(end == -1) {
+        end = dims_.size() - 1;
+    }
+    for (int i = start; i <= end; i++) {
+        merged_dim *= dims_[i];
+    }
+    new_shape.erase(new_shape.begin() + start, new_shape.begin() + end + 1);
+    //将merged_dim插入到原本start的位置
+    new_shape.insert(new_shape.begin() + start, merged_dim);
+    return Contiguous()->View(new_shape);
 }
 
 std::shared_ptr<Tensor> Tensor::Squeeze(int64_t dim) {
@@ -353,11 +363,24 @@ std::shared_ptr<Tensor> Tensor::RequiresGrad() {
     return shared_from_this();
 }
 
-void Tensor::Backward(std::shared_ptr<Tensor> gradient, bool retain_graph, bool create_graph) const {
-    // =================================== 作业 ===================================
-    // TODO：实现自动微分反向传播
-    // 功能描述：1. 计算当前张量对叶子节点的梯度    2. 支持多输出场景的梯度累加
-    // =================================== 作业 ===================================
+void Tensor::Backward(std::shared_ptr<Tensor> gradient, bool retain_graph, bool create_graph) {
+
+    if (grad_fn_) {
+        if (!gradient) {
+            CHECK_EQ(dims_.size(), 0);
+            gradient = std::make_shared<Tensor>(std::vector<int64_t>{}, dtype_, GetDevice());
+            gradient->Fill<float>(1.0f);
+        } else {
+            CHECK_EQ(static_cast<int>(GetDevice().Type()), static_cast<int>(gradient->GetDevice().Type()));
+            CHECK_EQ(static_cast<int>(dtype_), static_cast<int>(gradient->Dtype()));
+            CHECK_EQ(dims_.size(), gradient->Dims().size());
+            for (int idx = 0; idx < dims_.size(); ++idx) 
+            {
+                 CHECK_EQ(dims_[idx], gradient->Dims()[idx]); 
+            }
+        }
+        grad_fn_->BackwardPartial(gradient, output_idx_);
+    }
 }
 
 void Tensor::ZeroGrad() {

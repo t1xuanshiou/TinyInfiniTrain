@@ -176,19 +176,19 @@ std::shared_ptr<Tensor> PowForward(const std::shared_ptr<Tensor> &input, float s
 std::shared_ptr<Tensor> PowBackward(const std::shared_ptr<Tensor> &grad_output, const std::shared_ptr<Tensor> &input,
                                     float scalar, bool scalar_is_base) {
     if (scalar_is_base) {
-        return UnaryBackward(grad_output, input, [scalar](float x) { return std::log(scalar) * powf(scalar, x); });
+        return UnaryBackward(grad_output, input, [scalar](float x) { return logf(scalar) * powf(scalar, x); });
     } else {
         return UnaryBackward(grad_output, input, [scalar](float x) { return scalar * powf(x, scalar - 1.0f); });
     }
 }
 
 std::shared_ptr<Tensor> RsqrtForward(const std::shared_ptr<Tensor> &input) {
-    return UnaryForward(input, [](float x) { return 1.0f / std::sqrt(x); });
+    return UnaryForward(input, [](float x) { return 1.0f / sqrtf(x); });
 }
 
 std::shared_ptr<Tensor> RsqrtBackward(const std::shared_ptr<Tensor> &grad_output,
                                       const std::shared_ptr<Tensor> &input) {
-    return UnaryBackward(grad_output, input, [](float x) { return -0.5f / (x * std::sqrt(x)); });
+    return UnaryBackward(grad_output, input, [](float x) { return -0.5f / (x * sqrtf(x)); });
 }
 
 std::shared_ptr<Tensor> EqualsScalarForward(const std::shared_ptr<Tensor> &a, float scalar) {

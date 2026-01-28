@@ -26,6 +26,8 @@ public:
 
     void IncreaseDependenciesNumber();
 
+    std::vector<std::shared_ptr<Tensor>> Inputs() const { return saved_tensors_; }
+
 protected:
     std::vector<std::shared_ptr<Tensor>> saved_tensors_;
 

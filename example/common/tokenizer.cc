@@ -69,15 +69,20 @@ int SampleMult(float *probabilities, int n, float coin) {
 }
 
 Tokenizer::Tokenizer(const std::string &filepath) {
-    /* ===================================== 作业 =====================================
-    TODO：实现Tokenizer二进制文件加载
+    std::ifstream ifs(filepath, std::ios::binary);
+    auto header = ReadSeveralBytesFromIfstream(1024, &ifs);
+    magic_number_ = BytesToType<uint32_t>(header, 0); //20240328, GPT-2
+    vocab_size_ = BytesToType<uint32_t>(header, 8); //50257, vocab_size
 
-    文件格式说明：
-    ----------------------------------------------------------------------------------
-    | HEADER (1024 bytes)                     | VOCAB TABLE                           |
-    | magic(4B) | version(4B) | vocab_size(4B) | reserved(1012B) | token词表数据       |
-    ----------------------------------------------------------------------------------
-    ===================================== 作业 ===================================== */
+    token_table_.clear();
+    for (size_t i = 0; i < vocab_size_; ++i) {
+        uint8_t len;
+        ifs.read(reinterpret_cast<char*>(&len), 1); 
+        std::string s(len, ' ');
+        ifs.read(&s[0], len); 
+        token_table_.push_back(s);
+    }
+    eot_token_ = kEotMap.at(magic_number_);
 }
 
 std::string Tokenizer::Decode(uint32_t token_id) const {
@@ -85,7 +90,11 @@ std::string Tokenizer::Decode(uint32_t token_id) const {
     TODO：实现token_id到文本的转换
     功能描述：根据token_id返回对应的文本片段
     ===================================== 作业 ===================================== */
-    return "";
+    if (token_id >= vocab_size_) {
+        LOG(ERROR) << "Invalid token id: " << token_id;
+        return "";
+    }
+    return token_table_[token_id];
 }
 
 void Tokenizer::GenerateText(infini_train::nn::Module &model, uint32_t batch_size, uint32_t sequence_length,
@@ -104,13 +113,27 @@ void Tokenizer::GenerateText(infini_train::nn::Module &model, uint32_t batch_siz
     std::cout << "The meaning of life is";
 
     auto x = std::make_shared<infini_train::Tensor>(x_tensor.To(device));
-    uint64_t kRngState = kRngState;
+    uint64_t rng_state = 42;  // Fixed seed for reproducibility
     LOG(INFO) << "start generate text:";
     for (int t = prompt_len; t < text_length; t++) {
         /* ===================================== 作业 =====================================
         TODO：实现单步文本生成逻辑
         HINT：调用model.Forward推理获取logits，根据推理结果进行随机采样，调用Decode获取文本结果
         ===================================== 作业 ===================================== */
+        x = std::make_shared<infini_train::Tensor>(x->To(device));
+        auto logits = model.Forward({x})[0];
+        auto probs = nn::function::Softmax(logits, -1);
+        auto probs_cpu = probs->To(infini_train::Device(infini_train::DeviceType::kCPU, 0));
+        auto probs_cpu_ptr = probs_cpu.DataPtr();
+        auto vocab_size = logits->Dims()[2];
+        float *probs_ptr = static_cast<float *>(probs_cpu_ptr) + (t - 1) * vocab_size;
+        float coin = RandomF32(rng_state);
+        int next_token = SampleMult(probs_ptr, static_cast<int>(vocab_size), coin);
+
+        x = std::make_shared<infini_train::Tensor>(x->To(infini_train::Device(infini_train::DeviceType::kCPU, 0))); 
+        auto data_temp = static_cast<int64_t *>(x->DataPtr());
+        data_temp[t] = next_token;
+        std::cout << Decode(next_token);
     }
     std::cout << std::endl;
 }

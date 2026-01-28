@@ -10,8 +10,14 @@ std::vector<std::shared_ptr<Tensor>> Neg::Forward(const std::vector<std::shared_
     // TODO：通过Dispatcher获取设备专属kernel，对输入张量进行取反操作
     // NOTES: 依赖test_dispatcher，Neg kernel实现已给出
     // =================================== 作业 ===================================
+    
+    
+    CHECK_EQ(input_tensors.size(), 1);           // 验证输入只有一个张量
+      const auto &input = input_tensors[0];        // 获取输入张量
 
-    return std::vector<std::shared_ptr<Tensor>>();
+      auto device = input->GetDevice().Type();     // 获取设备类型
+      auto kernel = Dispatcher::Instance().GetKernel({device, "NegForward"});  // 获取kernel
+      return {kernel.Call<std::shared_ptr<Tensor>>(input)};  // 调用kernel并返回结果
 }
 
 std::vector<std::shared_ptr<Tensor>> Neg::Backward(const std::vector<std::shared_ptr<Tensor>> &grad_outputs) {
@@ -19,8 +25,13 @@ std::vector<std::shared_ptr<Tensor>> Neg::Backward(const std::vector<std::shared
     // TODO：通过Dispatcher获取设备专属的反向传播kernel，计算梯度
     // NOTES: 依赖test_dispatcher，Neg的kernel实现已给出
     // =================================== 作业 ===================================
+     
+    CHECK_EQ(grad_outputs.size(), 1);            // 验证梯度输出只有一个
+      const auto &grad_output = grad_outputs[0];   // 获取上游梯度
 
-    return std::vector<std::shared_ptr<Tensor>>();
+      auto device = grad_output->GetDevice().Type();  // 获取设备类型
+      auto kernel = Dispatcher::Instance().GetKernel({device, "NegBackward"});  // 获取kernel
+      return {kernel.Call<std::shared_ptr<Tensor>>(grad_output)};  // 调用kernel返回输入梯度
 }
 
 std::vector<std::shared_ptr<Tensor>> Reciprocal::Forward(const std::vector<std::shared_ptr<Tensor>> &input_tensors) {
@@ -311,6 +322,11 @@ std::vector<std::shared_ptr<Tensor>> MulScalar::Backward(const std::vector<std::
     auto device = grad_output->GetDevice().Type();
     auto kernel = Dispatcher::Instance().GetKernel({device, "MulScalarBackward"});
     return {kernel.Call<std::shared_ptr<Tensor>>(grad_output, scalar_)};
+}
+void MulScalar::SetupContext(const std::vector<std::shared_ptr<Tensor>> &input_tensors,
+    const std::vector<std::shared_ptr<Tensor>> &output_tensors) {
+    const auto &input = input_tensors[0];
+    saved_tensors_ = {input};
 }
 
 std::vector<std::shared_ptr<Tensor>> Div::Forward(const std::vector<std::shared_ptr<Tensor>> &input_tensors) {

@@ -13,7 +13,7 @@ std::shared_ptr<Tensor> SigmoidForward(const std::shared_ptr<Tensor> &input) {
     float *output_ptr = static_cast<float *>(output->DataPtr());
 
     const int64_t numel = input->NumElements();
-    for (int64_t idx = 0; idx < numel; ++idx) { output_ptr[idx] = 1.0f / (1.0f + exp(-input_ptr[idx])); }
+    for (int64_t idx = 0; idx < numel; ++idx) { output_ptr[idx] = 1.0f / (1.0f + expf(-input_ptr[idx])); }
 
     return output;
 }

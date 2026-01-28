@@ -23,13 +23,65 @@ namespace infini_train::kernels::cuda {
         }                                                                                                              \
     } while (0)
 
+// Global cublas handle - created on first use, destroyed on program exit
+
+
 std::shared_ptr<Tensor> MatmulForward(const std::shared_ptr<Tensor> &input, const std::shared_ptr<Tensor> &other) {
     // =================================== 作业 ===================================
     // TODO：实现CUDA上的矩阵乘法前向计算
     // REF:
     // =================================== 作业 ===================================
+    const auto &input_dims = input->Dims();
+    const auto &other_dims = other->Dims();
+    
+    CHECK_GE(input_dims.size(), 2);
+    CHECK_EQ(input_dims.size(), other_dims.size()) << "Dimensions mismatch";
+    
+    size_t ndim = input_dims.size();
+    int64_t M = input_dims[ndim - 2];
+    int64_t K = input_dims[ndim - 1];
+    int64_t N = other_dims[ndim - 1];
+    CHECK_EQ(K, other_dims[ndim - 2]) << "Inner dimensions K must match";
 
-    auto output = std::make_shared<Tensor>();
+    // 计算 Batch 数量 (支持多维 Batch，如 [B1, B2, M, K])
+    int64_t batch_count = 1;
+    for (size_t i = 0; i < ndim - 2; ++i) {
+        CHECK_EQ(input_dims[i], other_dims[i]) << "Batch dimensions must match";
+        batch_count *= input_dims[i];
+    }
+
+    // 2. 准备输出张量
+    auto output_dims = input_dims;
+    output_dims[ndim - 2] = M;
+    output_dims[ndim - 1] = N;
+    auto output = std::make_shared<Tensor>(output_dims, DataType::kFLOAT32, input->GetDevice());
+
+    // 3. 计算 cuBLAS 步长 (Strides)
+    // 记住：由于我们要算 C = A * B，切换到 cuBLAS 列优先视角是 C^T = B^T * A^T
+    long long int strideA = M * K; // A 矩阵 batch 之间的间距
+    long long int strideB = K * N; // B 矩阵 batch 之间的间距
+    long long int strideC = M * N; // 结果矩阵 batch 之间的间距
+
+    float alpha = 1.0f;
+    float beta = 0.0f;
+    cublasHandle_t handle;
+    CUBLAS_CHECK(cublasCreate(&handle));
+
+    // 4. 调用 Batched GEMM
+    // 注意指针顺序：为了行优先转列优先，我们传入 (B, A) 得到 C
+    // 所以这里的 "矩阵A" 逻辑上是 other, "矩阵B" 逻辑上是 input
+    CUBLAS_CHECK(cublasSgemmStridedBatched(
+        handle,
+        CUBLAS_OP_N, CUBLAS_OP_N,
+        N, M, K,
+        &alpha,
+        static_cast<const float *>(other->DataPtr()), N, strideB, // 这里的 ld 是 N
+        static_cast<const float *>(input->DataPtr()), K, strideA, // 这里的 ld 是 K
+        &beta,
+        static_cast<float *>(output->DataPtr()), N, strideC,      // 这里的 ld 是 N
+        batch_count
+    ));
+    CUBLAS_CHECK(cublasDestroy(handle));
     return output;
 }
 
@@ -41,8 +93,50 @@ MatmulBackward(const std::shared_ptr<Tensor> &input, const std::shared_ptr<Tenso
     // REF:
     // =================================== 作业 ===================================
 
-    auto grad_input = std::make_shared<Tensor>();
-    auto grad_other = std::make_shared<Tensor>();
+    const auto &input_dims = input->Dims();
+    const auto &other_dims = other->Dims();
+    const auto &grad_dims = grad_output->Dims();
+
+    size_t ndim = input_dims.size();
+    int64_t M = input_dims[ndim - 2];
+    int64_t K = input_dims[ndim - 1];
+    int64_t N = other_dims[ndim - 1];
+
+    int64_t batch_count = 1;
+    for (size_t i = 0; i < ndim - 2; ++i) batch_count *= input_dims[i];
+
+    auto grad_input = std::make_shared<Tensor>(input_dims, DataType::kFLOAT32, grad_output->GetDevice());
+    auto grad_other = std::make_shared<Tensor>(other_dims, DataType::kFLOAT32, grad_output->GetDevice());
+
+    cublasHandle_t handle;
+    CUBLAS_CHECK(cublasCreate(&handle));
+    float alpha = 1.0f;
+    float beta = 0.0f;
+
+    CUBLAS_CHECK(cublasSgemmStridedBatched(
+        handle,
+        CUBLAS_OP_T, CUBLAS_OP_N, 
+        K, M, N,
+        &alpha,
+        static_cast<const float *>(other->DataPtr()), N, K * N,         
+        static_cast<const float *>(grad_output->DataPtr()), N, M * N,  
+        &beta,
+        static_cast<float *>(grad_input->DataPtr()), K, M * K,         
+        batch_count
+    ));
+
+    CUBLAS_CHECK(cublasSgemmStridedBatched(
+        handle,
+        CUBLAS_OP_N, CUBLAS_OP_T, 
+        N, K, M,
+        &alpha,
+        static_cast<const float *>(grad_output->DataPtr()), N, M * N, 
+        static_cast<const float *>(input->DataPtr()), K, M * K,      
+        &beta,
+        static_cast<float *>(grad_other->DataPtr()), N, K * N,       
+        batch_count
+    ));
+    CUBLAS_CHECK(cublasDestroy(handle));
     return {grad_input, grad_other};
 }
 
@@ -122,6 +216,7 @@ std::shared_ptr<Tensor> LinearForward(const std::shared_ptr<Tensor> &input, cons
                                  static_cast<const float *>(weight->DataPtr()), out_features,
                                  static_cast<const float *>(input->DataPtr()), in_features, &beta,
                                  static_cast<float *>(output->DataPtr()), out_features));
+                            
     }
     CUBLAS_CHECK(cublasDestroy(handle));
     return output;
@@ -227,7 +322,6 @@ LinearBackward(const std::shared_ptr<Tensor> &input, const std::shared_ptr<Tenso
     }
 
     CUBLAS_CHECK(cublasDestroy(handle));
-
     return {grad_input, grad_weight, grad_bias};
 }
 } // namespace infini_train::kernels::cuda

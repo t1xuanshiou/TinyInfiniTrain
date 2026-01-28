@@ -46,8 +46,8 @@ static std::mt19937 gen{kRandomSeed};
 std::vector<std::shared_ptr<infini_train::Tensor>>
 NewGELU::Forward(const std::vector<std::shared_ptr<infini_train::Tensor>> &x) {
     auto &input = x[0];
-    return {0.5 * input
-            * (1.0 + nn::function::Tanh(std::sqrt(2.0 / M_PI) * (input + 0.044715 * nn::function::Pow(input, 3.0))))};
+    return {0.5f * input
+            * (1.0f + nn::function::Tanh(std::sqrt(2.0f / static_cast<float>(M_PI)) * (input + 0.044715f * nn::function::Pow(input, 3.0f))))};
 }
 
 CausalSelfAttention::CausalSelfAttention(const GPT2Config &config)
@@ -94,7 +94,7 @@ CausalSelfAttention::Forward(const std::vector<std::shared_ptr<infini_train::Ten
     // q: (bs, n_head, seq_len, n_embd / n_head)
     // k: (bs, n_head, seq_len, n_embd / n_head) -> (bs, n_head, n_embd / n_head, seq_len)
     // q matmul k: (bs, n_head, seq_len, seq_len) -> mul 1.0 / sqrt(n_embd / n_head) -> (bs, n_head, seq_len, seq_len)
-    auto att = q->Matmul(k->Transpose(-2, -1)) * (1.0 / std::sqrt(*k->Dims().rbegin()));
+    auto att = q->Matmul(k->Transpose(-2, -1)) * (1.0f / sqrtf(static_cast<float>(*k->Dims().rbegin())));
     // (1, 1, seq_len, seq_len)
     auto mask = bias_->Slice({0, 0, 0, 0}, {1, 1, T, T}, {1, 1, 1, 1});
     // (1, 1, seq_len, seq_len) -> eq 0 -> (1, 1, seq_len, seq_len) -> masked_fill -> (bs, n_head, seq_len, seq_len)
